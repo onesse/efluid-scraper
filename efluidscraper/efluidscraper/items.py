@@ -10,5 +10,11 @@ import scrapy
 
 class EfluidscraperItem(scrapy.Item):
     # define the fields for your item here like:
-    # name = scrapy.Field()
-    pass
+    id_reference = scrapy.Field()
+    pds = scrapy.Field()
+    conso_prod = scrapy.Field()
+    numero_rue = scrapy.Field()
+    voie = scrapy.Field()
+    commune = scrapy.Field()
+    ref_compteur = scrapy.Field()
+
