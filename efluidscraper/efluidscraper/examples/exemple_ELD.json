@@ -1,0 +1,32 @@
+{
+  "GREENALP": {
+    "url": "https://portailfr.geg-grd.fr/efluidnetPROD/jsp/arc/commun/frame.jsp",
+    "url_base": "https://portailfr.geg-grd.fr/efluidnetPROD/jsp/arc/commun/",
+    "login": "",
+    "pwd" : ""
+  },
+  "GEREDIS": {
+    "url": "https://portail.geredis.fr/application/jsp/arc/commun/frame.jsp",
+    "url_base": "https://portail.geredis.fr/application/jsp/arc/commun/",
+    "login": "",
+    "pwd" : ""
+  },
+  "VIALIS": {
+    "url": "https://accesgrd.vialis.tm.fr/application/jsp/arc/commun/frame.jsp",
+    "url_base": "https://accesgrd.vialis.tm.fr/application/jsp/arc/commun/",
+    "login": "",
+    "pwd" : ""
+  },
+  "ESR": {
+    "url": "https://espace-reserve.strasbourg-electricite-reseaux.fr/efluidES_NET/jsp/arc/commun/frame.jsp",
+    "url_base": "https://espace-reserve.strasbourg-electricite-reseaux.fr/efluidES_NET/jsp/arc/commun/",
+    "login": "",
+    "pwd" : ""
+  },
+  "URM": {
+    "url": "https://portail-grd.urm-metz.fr/application/jsp/arc/commun/frame.jsp",
+    "url_base": "https://portail-grd.urm-metz.fr/application/jsp/arc/commun/",
+    "login": "",
+    "pwd" : ""
+  }
+}

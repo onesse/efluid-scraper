@@ -1,15 +1,16 @@
 # efluid-scraper
-Scraper efluid
+Scraper e-fluid
 
-## Install Splash
-In order to install Splash you should have Docker already installed. If you haven’t, install it  now with pip:
+#### Etape 1
+Mettre en place un environnement virtuel
 
-`sudo apt install docker.io`
+#### Etape 2
+`pip install -r requirements.txt`
 
-Using docker you can install Splash:
+#### Etape 3
+créer un dossier credentials/ et y ajouter le fichier ELD.json contenant logins et mots de passe.
 
-`sudo docker pull scrapinghub/splash`
+#### Etape 4
+Lancer le spider :
 
-Now you can test if Splash is installed properly you have to start Splash server every time you want to use it:
-
-`sudo docker run -p 8050:8050 scrapinghub/splash`
+`scrapy crawl login -a filename=./test-efluid-scraper.xlsx -o output.csv`

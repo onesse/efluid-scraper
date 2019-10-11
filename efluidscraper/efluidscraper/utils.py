@@ -53,3 +53,10 @@ def add_url_params(url, params):
     ).geturl()
 
     return new_url
+
+# def select_value_input(name: str, response):
+#     for direction in ['preceding-sibling', 'following-sibling']:
+#         xpath = f'\'//input[@name="{name}"]\''
+#         result = response.xpath(xpath)[0].xpath(direction + '::*/@value').extract_first()
+#         if result is not None:
+#             return result

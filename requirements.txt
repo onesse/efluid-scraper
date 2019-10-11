@@ -1,3 +1,5 @@
 scrapy
 scrapy-splash
 pandas
+xlrd
+tldextract
