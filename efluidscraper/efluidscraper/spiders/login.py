@@ -201,9 +201,9 @@ class LoginSpider(scrapy.Spider):
                 if i == 0:
                     onclick = response.xpath(f'//td[@class="{class_td_result}"]/a/@onclick').extract_first()
                     values_site.append(re.search("selIdresultatRecherche.value='(.*)';", onclick).group(1))
-                # print(colonne.xpath('./input/@value').extract_first() or '')
-                values_site.append(colonne.xpath('./input/@value').extract_first() or '')
-                adict = dict(izip(colonnes_reponse, values_site))
+                else:
+                    values_site.append(colonne.xpath('./input/@value').extract_first() or '')
+                    adict = dict(izip(colonnes_reponse, values_site))
 
             _dict_sites.update(adict)
 
