@@ -13,6 +13,8 @@ import tldextract
 
 # pycharm peut ne pas comprendre et indiquer une erreur de lib
 from efluidscraper.utils import add_url_params, query_string_remove
+from scrapy.spidermiddlewares.httperror import HttpError
+from twisted.internet.error import DNSLookupError, TCPTimedOutError
 from twisted.python.compat import izip
 from efluidscraper.const import FORM_DATA_POST_RECHERCHE, FORM_DATA_VISU_ONGLET_VISU_RELEVES, \
     FORM_DATA_RELATION_CLIENT, RelationClient, DomaineTension, TypeTension
@@ -55,6 +57,7 @@ class LoginSpider(scrapy.Spider):
 
         # On récupère le fichier de RAE à parser
         self.list_rae_df = pd.read_excel(filename)
+        self.list_rae_df = self.list_rae_df.replace(pd.np.nan, '', regex=True)
 
         super().__init__(**kwargs)
 
@@ -69,6 +72,7 @@ class LoginSpider(scrapy.Spider):
             # utilisation des metas
             meta = self.DATA_ELD[grd]
             meta['sites'] = list_rae_grd_df
+            meta['grd'] = grd
             meta['_rqId_'] = 0
 
             for idx, row in list_rae_grd_df.iterrows():
@@ -91,9 +95,9 @@ class LoginSpider(scrapy.Spider):
         meta = response.meta
         meta['_rqId_'] += 1
 
-        self.ns = response.xpath('//input[@name="ns"]/@value').extract_first()
-        self.cs = response.xpath('//input[@name="cs"]/@value').extract_first()
-        self.fs = response.xpath('//input[@name="fs"]/@value').extract_first()
+        self.ns = response.xpath('//input[@name="ns"]/@value').extract_first() or ''
+        self.cs = response.xpath('//input[@name="cs"]/@value').extract_first() or ''
+        self.fs = response.xpath('//input[@name="fs"]/@value').extract_first() or ''
         meta["session_id"] = query_string_remove(response.url)[-32:]
 
         formdata = {'lg': meta['login'],
@@ -145,14 +149,14 @@ class LoginSpider(scrapy.Spider):
         meta['_rqId_'] += 1
 
         # Il faut découvrir les inputs de type "hidden"...
-        self._nwg_ = response.xpath('//input[@name="_nwg_"]/@value').extract_first()
-        self.lnm = response.xpath('//input[@name="lnm"]/@value').extract_first()
-        self.npg = response.xpath('//input[@name="npg"]/@value').extract_first()
-        self._mnLck_ = response.xpath('//input[@name="_mnLck_"]/@value').extract_first()
-        self.abonnementsPortail = response.xpath('//select[@name="abonnementsPortail"]/option/@value').extract_first()
-        self.ns = response.xpath('//input[@name="ns"]/@value').extract_first()
-        self.cs = response.xpath('//input[@name="cs"]/@value').extract_first()
-        self.fs = response.xpath('//input[@name="fs"]/@value').extract_first()
+        self._nwg_ = response.xpath('//input[@name="_nwg_"]/@value').extract_first() or ''
+        self.lnm = response.xpath('//input[@name="lnm"]/@value').extract_first() or ''
+        self.npg = response.xpath('//input[@name="npg"]/@value').extract_first() or ''
+        self._mnLck_ = response.xpath('//input[@name="_mnLck_"]/@value').extract_first() or ''
+        self.abonnementsPortail = response.xpath('//select[@name="abonnementsPortail"]/option/@value').extract_first() or ''
+        self.ns = response.xpath('//input[@name="ns"]/@value').extract_first() or ''
+        self.cs = response.xpath('//input[@name="cs"]/@value').extract_first() or ''
+        self.fs = response.xpath('//input[@name="fs"]/@value').extract_first() or ''
 
         formdata = FORM_DATA_POST_RECHERCHE.copy()
         formdata['_rqId_'] = str(meta['_rqId_'])
@@ -161,6 +165,18 @@ class LoginSpider(scrapy.Spider):
         formdata['_mnLck_'] = self._mnLck_
         formdata['abonnementsPortail'] = self.abonnementsPortail
         formdata['referencePDS'] = meta['site_en_cours']['rae']
+
+        # Si le PDL contient une clé et que l'on ne la connait pas on va la chercher
+        if meta['pds_key']:
+            if 'key' in meta['site_en_cours']:
+                if meta['site_en_cours']['key'] == '':
+                    meta['site_en_cours']['key'] = 10
+            else:
+                meta['site_en_cours']['key'] = 10
+            formdata['clePDS'] = str(meta['site_en_cours']['key'])
+
+        meta['formdata'] = formdata
+
         # préparation de l'url
         url = query_string_remove(response.url)
 
@@ -168,11 +184,59 @@ class LoginSpider(scrapy.Spider):
                           method='POST',
                           formdata=formdata,
                           callback=self.parsing_recherche_point,
+                          errback=self.errback,
                           meta=meta)
 
+    def errback(self, failure):
+        # log all failures
+        self.logger.error(repr(failure))
+
+        if failure.check(HttpError):
+            # these exceptions come from HttpError spider middleware
+            # you can get the non-200 response
+            response = failure.value.response
+            self.logger.error('HttpError on %s', response.url)
+
+        elif failure.check(DNSLookupError):
+            # this is the original request
+            request = failure.request
+            self.logger.error('DNSLookupError on %s', request.url)
+
+        elif failure.check(TimeoutError, TCPTimedOutError):
+            request = failure.request
+            self.logger.error('TimeoutError on %s', request.url)
 
     def parsing_recherche_point(self, response):
+        # print(response.body.decode('latin-1'))
+        message_erreur = response.xpath('//ul[@class="messageErreur"]/li/text()').extract_first() or ''
+        print(message_erreur)
+        print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+        pattern = "la clé ([0-9]{1,2}|nan) n'est pas valide pour la référence de PDS"
+        if re.match(pattern, message_erreur):
+            if response.meta['site_en_cours']['key'] is not None:
+                formdata = response.meta['formdata']
+                response.meta['site_en_cours']['key'] += 1
+                formdata['clePDS'] = str(response.meta['site_en_cours']['key'])
+                self._rqId_ += 1
+                formdata['_rqId_'] = str(self._rqId_)
+
+                yield FormRequest(url=response.url,
+                          method='POST',
+                          formdata=formdata,
+                          callback=self.parsing_recherche_point,
+                          errback=self.errback,
+                          meta=response.meta)
+            else:
+                self.logger.error("Aucune clé PDS valide ...")
+                item = {'error': "Aucune clé PDS valide ..."}
+                return item
+
+        # print(response.body.decode('latin-1'))
         resultat = response.xpath('//div[@class="entete-tableau resultat-recherche"]/span/text()').extract_first()
+
+        if resultat is None or not re.match(r"Résultat : il y a [1-9]{1,2} enregistrement\x28s\x29 correspondant à votre demande", resultat):
+            return
+
         print(f"rae: {response.meta['site_en_cours']['rae']} : {resultat}")
 
         body = response.body.decode('latin-1')
@@ -223,6 +287,9 @@ class LoginSpider(scrapy.Spider):
         item['commune'] = df.iloc[0]['commune']
         item['ref_compteur'] = df.iloc[0]['réf. compteur']
 
+        if 'key' in response.meta['site_en_cours'] and response.meta['site_en_cours']['key'] != '':
+            item['clePDS'] = response.meta['site_en_cours']['key']
+
         meta = response.meta
         meta['item'] = item
         meta['_rqId_'] += 1
@@ -260,8 +327,8 @@ class LoginSpider(scrapy.Spider):
         formdata['typecontratconcluye'] = str(RelationClient[response.meta["site_en_cours"]["contrat"]].value)
         formdata['numeroContratConcluAvecClient'] = response.meta["site_en_cours"]["ref_relation_client"]
         formdata['dateSignatureContrat'] = response.meta["site_en_cours"]["signature_relation_client"].strftime("%d/%m/%Y")
-        formdata['mentionLegaleMandat'] = response.xpath('//textarea[@name="mentionLegaleMandat"]/text()').extract_first()
-        formdata['mentionLegaleContratConclu'] = response.xpath('//textarea[@name="mentionLegaleMandat"]/text()').extract_first()
+        formdata['mentionLegaleMandat'] = response.xpath('//textarea[@name="mentionLegaleMandat"]/text()').extract_first() or ''
+        formdata['mentionLegaleContratConclu'] = response.xpath('//textarea[@name="mentionLegaleMandat"]/text()').extract_first() or ''
 
         url = meta['url_base'] + 'ref.ZoomerChoixRelationContratAvecClient.go;SESSIONID=' + meta["session_id"]
 
@@ -279,17 +346,17 @@ class LoginSpider(scrapy.Spider):
         meta['_rqId_'] += 1
         item = meta['item']
 
-        item['reference'] = response.xpath('//input[@name="reference"]/@value').extract_first()
-        item['type'] = response.xpath('//input[@name="typeEspacedescr"]/@value').extract_first()
-        item['libelle'] = response.xpath('//input[@name="libelle"]/@value').extract_first()
-        item['complement'] = response.xpath('//input[@name="complementLocalisation"]/@value').extract_first()
-        item['statut'] = response.xpath('//input[@name="statutdescr"]/@value').extract_first()
+        item['reference'] = response.xpath('//input[@name="reference"]/@value').extract_first() or ''
+        item['type'] = response.xpath('//input[@name="typeEspacedescr"]/@value').extract_first() or ''
+        item['libelle'] = response.xpath('//input[@name="libelle"]/@value').extract_first() or ''
+        item['complement'] = response.xpath('//input[@name="complementLocalisation"]/@value').extract_first() or ''
+        item['statut'] = response.xpath('//input[@name="statutdescr"]/@value').extract_first() or ''
 
-        item['utilisationdescr'] = response.xpath('//input[@name="utilisationdescr"]/@value').extract_first()
-        item['utilisation'] = response.xpath('//input[@name="utilisation"]/@value').extract_first()
-        item['dateDeCreation'] =  response.xpath('//input[@name="dateDeCreation"]/@value').extract_first()
-        item['dateDeModification'] = response.xpath('//input[@name="dateDeModification"]/@value').extract_first()
-        item['dateDeSuppression'] = response.xpath('//input[@name="dateDeSuppression"]/@value').extract_first()
+        item['utilisationdescr'] = response.xpath('//input[@name="utilisationdescr"]/@value').extract_first() or ''
+        item['utilisation'] = response.xpath('//input[@name="utilisation"]/@value').extract_first() or ''
+        item['dateDeCreation'] =  response.xpath('//input[@name="dateDeCreation"]/@value').extract_first() or ''
+        item['dateDeModification'] = response.xpath('//input[@name="dateDeModification"]/@value').extract_first() or ''
+        item['dateDeSuppression'] = response.xpath('//input[@name="dateDeSuppression"]/@value').extract_first() or ''
 
         # Changement d'url
         url = meta['url_base'] + 'ref.ZoomerDossierEDLOElementsTechniques.go;SESSIONID=' + meta["session_id"]
@@ -316,45 +383,45 @@ class LoginSpider(scrapy.Spider):
 
         meta['_rqId_'] += 1
 
-        item['reference'] = response.xpath('//input[@name="reference"]/@value').extract_first()
-        item['naturedescr'] = response.xpath('//input[@name="naturedescr"]/@value').extract_first()
-        item['nature'] = response.xpath('//input[@name="nature"]/@value').extract_first()
-        item['sousEtatElec'] = response.xpath('//input[@name="sousEtatElec"]/@value').extract_first()
-        item['sousEtatElecdescr'] = response.xpath('//input[@name="sousEtatElecdescr"]/@value').extract_first()
+        item['reference'] = response.xpath('//input[@name="reference"]/@value').extract_first() or ''
+        item['naturedescr'] = response.xpath('//input[@name="naturedescr"]/@value').extract_first() or ''
+        item['nature'] = response.xpath('//input[@name="nature"]/@value').extract_first() or ''
+        item['sousEtatElec'] = response.xpath('//input[@name="sousEtatElec"]/@value').extract_first() or ''
+        item['sousEtatElecdescr'] = response.xpath('//input[@name="sousEtatElecdescr"]/@value').extract_first() or ''
 
-        item['etat'] = response.xpath('//input[@name="etat"]/@value').extract_first()
-        item['etatdescr'] = response.xpath('//input[@name="etatdescr"]/@value').extract_first()
+        item['etat'] = response.xpath('//input[@name="etat"]/@value').extract_first() or ''
+        item['etatdescr'] = response.xpath('//input[@name="etatdescr"]/@value').extract_first() or ''
 
-        item['grd'] = response.xpath('//input[@name="grd"]/@value').extract_first()
+        item['grd'] = response.xpath('//input[@name="grd"]/@value').extract_first() or ''
 
-        item['dateEtat'] = response.xpath('//input[@name="dateEtat"]/@value').extract_first()
-        item['dateAbandon'] = response.xpath('//input[@name="dateAbandon"]/@value').extract_first()
-        item['dateCreation'] = response.xpath('//input[@name="dateCreation"]/@value').extract_first()
-        item['dateModification'] = response.xpath('//input[@name="dateModification"]/@value').extract_first()
-        item['dateMiseEnService'] = response.xpath('//input[@name="dateMiseEnService"]/@value').extract_first()
-        item['adresseEDL'] = response.xpath('//input[@name="adresseEDL"]/@value').extract_first()
-        item['complementsLocalisationEDL'] = response.xpath('//input[@name="complementsLocalisationEDL"]/@value').extract_first()
+        item['dateEtat'] = response.xpath('//input[@name="dateEtat"]/@value').extract_first() or ''
+        item['dateAbandon'] = response.xpath('//input[@name="dateAbandon"]/@value').extract_first() or ''
+        item['dateCreation'] = response.xpath('//input[@name="dateCreation"]/@value').extract_first() or ''
+        item['dateModification'] = response.xpath('//input[@name="dateModification"]/@value').extract_first() or ''
+        item['dateMiseEnService'] = response.xpath('//input[@name="dateMiseEnService"]/@value').extract_first() or ''
+        item['adresseEDL'] = response.xpath('//input[@name="adresseEDL"]/@value').extract_first() or ''
+        item['complementsLocalisationEDL'] = response.xpath('//input[@name="complementsLocalisationEDL"]/@value').extract_first() or ''
 
 
-        item['niveauTension'] = DomaineTension(int(response.css('input[name="niveauTension"]:checked::attr(value)').extract_first())).name
-        item['typeTension'] = TypeTension(int(response.css('input[name="typeTension"]:checked::attr(value)').extract_first())).name
-        item['puisLimiteTechnique'] = response.css('input[name="puisLimiteTechnique"]::attr(value)').extract_first()
-        item['puisLimiteTechnique_unit'] = response.css('input[name="puisLimiteTechnique_unit"]::attr(value)').extract_first()
-        item['puisLimiteTechnique_unitdescr'] = response.css('input[name="puisLimiteTechnique_unitdescr"]::attr(value)').extract_first()
-        item['calibreProtection'] = response.css('input[name="calibreProtection"]::attr(value)').extract_first()
-        item['typeProtection'] = response.css('input[name="typeProtection"]::attr(value)').extract_first()
-        item['typeProtectiondescr'] = response.css('input[name="typeProtectiondescr"]::attr(value)').extract_first()
+        item['niveauTension'] = DomaineTension(int(response.css('input[name="niveauTension"]:checked::attr(value)').extract_first())).name or ''
+        item['typeTension'] = TypeTension(int(response.css('input[name="typeTension"]:checked::attr(value)').extract_first())).name or ''
+        item['puisLimiteTechnique'] = response.css('input[name="puisLimiteTechnique"]::attr(value)').extract_first() or ''
+        item['puisLimiteTechnique_unit'] = response.css('input[name="puisLimiteTechnique_unit"]::attr(value)').extract_first() or ''
+        item['puisLimiteTechnique_unitdescr'] = response.css('input[name="puisLimiteTechnique_unitdescr"]::attr(value)').extract_first() or ''
+        item['calibreProtection'] = response.css('input[name="calibreProtection"]::attr(value)').extract_first() or ''
+        item['typeProtection'] = response.css('input[name="typeProtection"]::attr(value)').extract_first() or ''
+        item['typeProtectiondescr'] = response.css('input[name="typeProtectiondescr"]::attr(value)').extract_first() or ''
 
-        item['modeReleve'] = response.css('input[name="modeReleve"]::attr(value)').extract_first()
-        item['modeRelevedescr'] = response.css('input[name="modeRelevedescr"]::attr(value)').extract_first()
+        item['modeReleve'] = response.css('input[name="modeReleve"]::attr(value)').extract_first() or ''
+        item['modeRelevedescr'] = response.css('input[name="modeRelevedescr"]::attr(value)').extract_first() or ''
 
-        item['emplacementCompteur'] = response.css('input[name="emplacementCompteur"]::attr(value)').extract_first()
-        item['emplacementCompteurdescr'] = response.css('input[name="emplacementCompteurdescr"]::attr(value)').extract_first()
+        item['emplacementCompteur'] = response.css('input[name="emplacementCompteur"]::attr(value)').extract_first() or ''
+        item['emplacementCompteurdescr'] = response.css('input[name="emplacementCompteurdescr"]::attr(value)').extract_first() or ''
 
-        item['certificatConformite'] = response.css('input[name="certificatConformite"]::attr(value)').extract_first()
-        item['certificatConformitedescr'] = response.css('input[name="certificatConformitedescr"]::attr(value)').extract_first()
+        item['certificatConformite'] = response.css('input[name="certificatConformite"]::attr(value)').extract_first() or ''
+        item['certificatConformitedescr'] = response.css('input[name="certificatConformitedescr"]::attr(value)').extract_first() or ''
 
-        item['dateProchaineReleve'] = response.css('input[name="dateProchaineReleve"]::attr(value)').extract_first()
+        item['dateProchaineReleve'] = response.css('input[name="dateProchaineReleve"]::attr(value)').extract_first() or ''
 
         # Click sur l'onglet "relèves"
         formdata = FORM_DATA_VISU_ONGLET_VISU_RELEVES.copy()

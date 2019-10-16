@@ -40,6 +40,9 @@ CONCURRENT_REQUESTS = 32
 # Disable cookies (enabled by default)
 COOKIES_ENABLED = True
 
+# Number of retries
+RETRY_TIMES = 0
+
 # Disable Telnet Console (enabled by default)
 #TELNETCONSOLE_ENABLED = False
 

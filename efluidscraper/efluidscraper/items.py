@@ -68,3 +68,6 @@ class EfluidscraperItem(scrapy.Item):
     grd = scrapy.Field()
     conso = scrapy.Field()
 
+    error = scrapy.Field()
+    clePDS = scrapy.Field()
+
