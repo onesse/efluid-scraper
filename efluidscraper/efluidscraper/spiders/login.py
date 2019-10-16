@@ -209,8 +209,6 @@ class LoginSpider(scrapy.Spider):
     def parsing_recherche_point(self, response):
         # print(response.body.decode('latin-1'))
         message_erreur = response.xpath('//ul[@class="messageErreur"]/li/text()').extract_first() or ''
-        print(message_erreur)
-        print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
         pattern = "la clé ([0-9]{1,2}|nan) n'est pas valide pour la référence de PDS"
         if re.match(pattern, message_erreur):
             if response.meta['site_en_cours']['key'] is not None:
