@@ -170,9 +170,9 @@ class LoginSpider(scrapy.Spider):
         if meta['pds_key']:
             if 'key' in meta['site_en_cours']:
                 if meta['site_en_cours']['key'] == '':
-                    meta['site_en_cours']['key'] = 10
+                    meta['site_en_cours']['key'] = 0
             else:
-                meta['site_en_cours']['key'] = 10
+                meta['site_en_cours']['key'] = 0
             formdata['clePDS'] = str(meta['site_en_cours']['key'])
 
         meta['formdata'] = formdata
@@ -287,6 +287,8 @@ class LoginSpider(scrapy.Spider):
 
         if 'key' in response.meta['site_en_cours'] and response.meta['site_en_cours']['key'] != '':
             item['clePDS'] = response.meta['site_en_cours']['key']
+        else:
+            item['clePDS'] = ''
 
         meta = response.meta
         meta['item'] = item
