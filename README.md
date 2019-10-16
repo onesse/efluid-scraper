@@ -14,3 +14,8 @@ créer un dossier credentials/ et y ajouter le fichier ELD.json contenant logins
 Lancer le spider :
 
 `scrapy crawl login -a filename=./test-efluid-scraper.xlsx -o output.csv`
+
+#### Etape 5
+Lancer le spider via votre script:
+
+https://docs.scrapy.org/en/latest/topics/practices.html 
