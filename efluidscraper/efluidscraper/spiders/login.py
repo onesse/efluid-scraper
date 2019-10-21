@@ -214,7 +214,7 @@ class LoginSpider(scrapy.Spider):
             if response.meta['site_en_cours']['key'] is not None:
                 formdata = response.meta['formdata']
                 response.meta['site_en_cours']['key'] += 1
-                formdata['clePDS'] = str(response.meta['site_en_cours']['key'])
+                formdata['clePDS'] = str(response.meta['site_en_cours']['key']).zfill(2)
                 self._rqId_ += 1
                 formdata['_rqId_'] = str(self._rqId_)
 
@@ -286,7 +286,8 @@ class LoginSpider(scrapy.Spider):
         item['ref_compteur'] = df.iloc[0]['réf. compteur']
 
         if 'key' in response.meta['site_en_cours'] and response.meta['site_en_cours']['key'] != '':
-            item['clePDS'] = response.meta['site_en_cours']['key']
+            cle_pds = response.meta['site_en_cours']['key']
+            item['clePDS'] = f'"{str(cle_pds).zfill(2)}"'
         else:
             item['clePDS'] = ''
 
